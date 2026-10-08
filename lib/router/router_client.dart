@@ -193,6 +193,11 @@ class RouterClient {
     Map<String, String>? params,
   }) async {
     final xml = RouterXml.buildRequest(objPath, objMethod, params: params);
+    const csrfToken = String.fromEnvironment('ROUTER_CSRF_TOKEN');
+
+    if (csrfToken.isEmpty) {
+      throw StateError('Missing ROUTER_CSRF_TOKEN configuration.');
+    }
 
     return _dio.post<String>(
       '/xml_action.cgi?method=set',
@@ -201,7 +206,7 @@ class RouterClient {
         responseType: ResponseType.plain,
         headers: {
           'Authorization': _authorization('POST'),
-          // Add the router's CSRF header here once configured locally.
+          'csrftoken': csrfToken,
         },
       ),
     );
