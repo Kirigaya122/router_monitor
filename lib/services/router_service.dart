@@ -5,8 +5,8 @@ import '../router/parsers/router_statistics_parser.dart';
 import '../router/parsers/router_battery_parser.dart';
 import '../router/parsers/router_clients_parser.dart';
 import '../router/parsers/router_link_context_parser.dart';
-import '../router/router_utils/router_speed_calculator.dart';
 import '../router/parsers/router_clients_devices_parser.dart';
+import '../router/router_utils/router_speed_calculator.dart';
 
 class RouterDashboardData {
   final RouterStatistics statistics;
@@ -27,39 +27,65 @@ class RouterDashboardData {
 }
 
 class RouterService {
-  static const _username = String.fromEnvironment(
-    'ROUTER_USERNAME',
-    defaultValue: 'admin',
-  );
-
-  static const _password = String.fromEnvironment('ROUTER_PASSWORD');
-
   final RouterClient _client = RouterClient();
   final RouterSpeedCalculator _speedCalculator = RouterSpeedCalculator();
 
   bool _loggedIn = false;
   bool _disposed = false;
+  Future<void>? _connectionAttempt;
 
-  Future<void> _ensureLoggedIn() async {
-    if (_loggedIn) return;
-
-    if (_password.isEmpty) {
-      throw StateError(
-        'Missing ROUTER_PASSWORD. Start the app with the required '
-        'compile-time configuration.',
-      );
+  /// Authenticate using credentials entered at runtime.
+  Future<void> connect({
+    required String username,
+    required String password,
+  }) async {
+    if (_disposed) {
+      throw StateError('Router service has been disposed.');
     }
 
-    final success = await _client.login(
-      username: _username,
-      password: _password,
-    );
+    if (_loggedIn) return;
+
+    // Avoid simultaneous login attempts using the same client.
+    final existingAttempt = _connectionAttempt;
+    if (existingAttempt != null) {
+      await existingAttempt;
+      return;
+    }
+
+    final attempt = _performLogin(username: username, password: password);
+
+    _connectionAttempt = attempt;
+
+    try {
+      await attempt;
+    } finally {
+      if (identical(_connectionAttempt, attempt)) {
+        _connectionAttempt = null;
+      }
+    }
+  }
+
+  Future<void> _performLogin({
+    required String username,
+    required String password,
+  }) async {
+    final success = await _client.login(username: username, password: password);
 
     if (!success) {
       throw StateError('Router login was not successful.');
     }
 
     _loggedIn = true;
+  }
+
+  Future<void> _ensureLoggedIn() async {
+    if (_disposed) {
+      throw StateError('Router service has been disposed.');
+    }
+
+    if (!_loggedIn) {
+      throw StateError('Not connected to the router. Please log in first.');
+    }
   }
 
   Future<String> _request(String path, String method) async {
@@ -74,6 +100,7 @@ class RouterService {
     }
 
     final body = response.data;
+
     if (body == null || body.trim().isEmpty) {
       throw const FormatException('The router returned an empty response.');
     }
@@ -82,29 +109,31 @@ class RouterService {
   }
 
   Future<RouterDashboardData> refresh() async {
-    if (_disposed) {
-      throw StateError('Router service has been disposed.');
-    }
-
     await _ensureLoggedIn();
 
-    // Fetch independently so these requests can run together.
-    final responses = await Future.wait([
-      _request('statistics', 'stat_get_common_data'),
-      _request('aoc', 'get_chg_info'),
-      _request('statistics', 'get_active_clients_num'),
-      _request('cm', 'get_link_context'),
-    ]);
+    // Keep these sequential: this order works with your router.
+    final statisticsXml = await _request('statistics', 'stat_get_common_data');
 
-    final statistics = RouterStatisticsParser.parse(responses[0]);
-    final battery = RouterBatteryParser.parse(responses[1]);
-    final clients = RouterClients.fromXml(responses[2]);
-    final linkContext = RouterLinkContextParser.parse(responses[3]);
+    final batteryXml = await _request('aoc', 'get_chg_info');
+
+    final clientsXml = await _request('statistics', 'get_active_clients_num');
+
+    final linkContextXml = await _request('cm', 'get_link_context');
+
+    final statistics = RouterStatisticsParser.parse(statisticsXml);
+
+    final battery = RouterBatteryParser.parse(batteryXml);
+
+    final clients = RouterClients.fromXml(clientsXml);
+
+    final linkContext = RouterLinkContextParser.parse(linkContextXml);
+
+    final now = DateTime.now();
 
     final speeds = _speedCalculator.update(
       totalRxBytes: statistics.totalRxBytes,
       totalTxBytes: statistics.totalTxBytes,
-      timestamp: DateTime.now(),
+      timestamp: now,
     );
 
     return RouterDashboardData(
@@ -113,15 +142,11 @@ class RouterService {
       clients: clients,
       linkContext: linkContext,
       speeds: speeds,
-      updatedAt: DateTime.now(),
+      updatedAt: now,
     );
   }
 
   Future<List<RouterClientDevice>> fetchConnectedDevices() async {
-    if (_disposed) {
-      throw StateError('Router service has been disposed.');
-    }
-
     await _ensureLoggedIn();
 
     final xml = await _request('statistics', 'get_conn_clients_info');
@@ -130,6 +155,8 @@ class RouterService {
   }
 
   void dispose() {
+    if (_disposed) return;
+
     _disposed = true;
     _client.close();
   }

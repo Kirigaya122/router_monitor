@@ -12,6 +12,7 @@ class RouterClient {
   static const String realm = 'Highwmg';
   static const String qop = 'auth';
   static const String digestUri = '/cgi/xml_action.cgi';
+  static const String csrfToken = 'hfiehifejfklihefiuehflejhfueihfeuihfeui';
 
   late final Dio _dio;
   final CookieJar _cookieJar = CookieJar();
@@ -193,11 +194,6 @@ class RouterClient {
     Map<String, String>? params,
   }) async {
     final xml = RouterXml.buildRequest(objPath, objMethod, params: params);
-    const csrfToken = String.fromEnvironment('ROUTER_CSRF_TOKEN');
-
-    if (csrfToken.isEmpty) {
-      throw StateError('Missing ROUTER_CSRF_TOKEN configuration.');
-    }
 
     return _dio.post<String>(
       '/xml_action.cgi?method=set',

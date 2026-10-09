@@ -8,14 +8,16 @@ import '../services/router_service.dart';
 import 'connected_devices_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final RouterService service;
+
+  const DashboardScreen({super.key, required this.service});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  late final RouterService _routerService;
+  late final RouterService _routerService = widget.service;
 
   RouterDashboardData? _data;
   String? _error;
@@ -25,7 +27,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _routerService = RouterService();
     _refresh();
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted && !_loading) {
@@ -659,19 +660,32 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final statusColor = active
+        ? const Color(0xFF16834A)
+        : colors.onSurfaceVariant;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: active ? colors.primary : colors.surfaceContainerHighest,
+        color: active
+            ? const Color(0x1F16834A)
+            : colors.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(30),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: active ? colors.onPrimary : colors.onSurfaceVariant,
-          fontWeight: FontWeight.w700,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            active ? Icons.check_circle_rounded : Icons.circle_outlined,
+            size: 16,
+            color: statusColor,
+          ),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: TextStyle(color: statusColor, fontWeight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }
