@@ -28,5 +28,4 @@ void main() {
   print('Active clients: ${clients.activeClients}');
   print('Wi-Fi clients: ${clients.totalWifiClients}');
   print('2.4 GHz clients: ${clients.active24gWifiClients}');
-  print('5 GHz clients: ${clients.active5gWifiClients}');
 }

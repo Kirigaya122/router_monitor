@@ -6,7 +6,6 @@ class RouterClients {
   final int activeUsbClients;
   final int totalWifiClients;
   final int active24gWifiClients;
-  final int active5gWifiClients;
   final int ssid1Clients;
   final int ssid2Clients;
   final int ssid3Clients;
@@ -22,7 +21,6 @@ class RouterClients {
     required this.activeUsbClients,
     required this.totalWifiClients,
     required this.active24gWifiClients,
-    required this.active5gWifiClients,
     required this.ssid1Clients,
     required this.ssid2Clients,
     required this.ssid3Clients,
@@ -48,7 +46,6 @@ class RouterClients {
       activeUsbClients: readInt('active_usb_clients_num'),
       totalWifiClients: readInt('wifi_total_num'),
       active24gWifiClients: readInt('active_24g_wifi_clients_num'),
-      active5gWifiClients: readInt('active_5g_wifi_clients_num'),
       ssid1Clients: readInt('active_wifi_ssid1_num'),
       ssid2Clients: readInt('active_wifi_ssid2_num'),
       ssid3Clients: readInt('active_wifi_ssid3_num'),
