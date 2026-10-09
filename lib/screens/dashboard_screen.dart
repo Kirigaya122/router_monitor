@@ -151,6 +151,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return message.replaceFirst('Bad state: ', '');
   }
 
+  void _openConnectedDevices() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConnectedDevicesScreen(service: _routerService),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _pollingTimer?.cancel();
@@ -174,45 +182,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Connected devices',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) =>
-                      ConnectedDevicesScreen(service: _routerService),
-                ),
-              );
-            },
-            icon: const Icon(Icons.devices_rounded),
+          Tooltip(
+            message: 'Refresh router data',
+            child: IconButton(
+              onPressed: _loading ? null : _refresh,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
           ),
-          IconButton(
-            tooltip: 'Refresh router data',
-            onPressed: _loading ? null : _refresh,
-            icon: const Icon(Icons.refresh_rounded),
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Log out',
+            child: TextButton.icon(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Log out'),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+            ),
           ),
           const SizedBox(width: 8),
-
-          PopupMenuButton<String>(
-            tooltip: 'More options',
-            onSelected: (value) {
-              if (value == 'logout') {
-                _logout();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout_rounded),
-                    SizedBox(width: 12),
-                    Text('Log out'),
-                  ],
-                ),
-              ),
-            ],
-          ),
         ],
       ),
       body: SafeArea(
@@ -289,7 +278,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             SizedBox(
                               width: cardWidth,
-                              child: _ClientsCard(data: data),
+                              child: _ClientsCard(
+                                data: data,
+                                onTap: _openConnectedDevices,
+                              ),
                             ),
                           ],
                         );
@@ -507,7 +499,6 @@ class _TrafficCard extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
-
           Row(
             children: [
               const Expanded(child: Text('Received')),
@@ -616,8 +607,9 @@ class _BatteryCard extends StatelessWidget {
 
 class _ClientsCard extends StatelessWidget {
   final RouterDashboardData data;
+  final VoidCallback onTap;
 
-  const _ClientsCard({required this.data});
+  const _ClientsCard({required this.data, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -626,6 +618,8 @@ class _ClientsCard extends StatelessWidget {
     return _DashboardCard(
       title: 'Connected devices',
       icon: Icons.devices_rounded,
+      onTap: onTap,
+      trailing: const Icon(Icons.chevron_right_rounded),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -644,6 +638,14 @@ class _ClientsCard extends StatelessWidget {
           _ClientRow(label: 'LAN', count: clients.activeLanClients),
           const SizedBox(height: 12),
           _ClientRow(label: 'USB', count: clients.activeUsbClients),
+          const SizedBox(height: 16),
+          Text(
+            'Tap to view connected devices',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
@@ -675,39 +677,54 @@ class _DashboardCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final Widget child;
+  final VoidCallback? onTap;
+  final Widget? trailing;
 
   const _DashboardCard({
     required this.title,
     required this.icon,
     required this.child,
+    this.onTap,
+    this.trailing,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: colors.primary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: colors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 22),
-            child,
-          ],
+                  if (trailing != null)
+                    IconTheme(
+                      data: IconThemeData(color: colors.onSurfaceVariant),
+                      child: trailing!,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              child,
+            ],
+          ),
         ),
       ),
     );
