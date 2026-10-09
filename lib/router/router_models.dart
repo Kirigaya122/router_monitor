@@ -118,3 +118,36 @@ class RouterBattery {
     required this.usbChargingStatus,
   });
 }
+
+class RouterClientDevice {
+  final String macAddress;
+  final String connectionType;
+  final String ipAddress;
+  final String name;
+  final int connectionTimeSeconds;
+  final int leaseRemainingSeconds;
+
+  const RouterClientDevice({
+    required this.macAddress,
+    required this.connectionType,
+    required this.ipAddress,
+    required this.name,
+    required this.connectionTimeSeconds,
+    required this.leaseRemainingSeconds,
+  });
+
+  String get connectionDuration {
+    final hours = connectionTimeSeconds ~/ 3600;
+    final minutes = (connectionTimeSeconds % 3600) ~/ 60;
+    final seconds = connectionTimeSeconds % 60;
+
+    return '${hours}h ${minutes}m ${seconds}s';
+  }
+
+  String get leaseRemaining {
+    final hours = leaseRemainingSeconds ~/ 3600;
+    final minutes = (leaseRemainingSeconds % 3600) ~/ 60;
+
+    return '${hours}h ${minutes}m';
+  }
+}
