@@ -6,6 +6,7 @@ import '../router/parsers/router_battery_parser.dart';
 import '../router/parsers/router_clients_parser.dart';
 import '../router/parsers/router_link_context_parser.dart';
 import '../router/router_utils/router_speed_calculator.dart';
+import '../router/parsers/router_clients_devices_parser.dart';
 
 class RouterDashboardData {
   final RouterStatistics statistics;
@@ -114,6 +115,18 @@ class RouterService {
       speeds: speeds,
       updatedAt: DateTime.now(),
     );
+  }
+
+  Future<List<RouterClientDevice>> fetchConnectedDevices() async {
+    if (_disposed) {
+      throw StateError('Router service has been disposed.');
+    }
+
+    await _ensureLoggedIn();
+
+    final xml = await _request('statistics', 'get_conn_clients_info');
+
+    return RouterClientDevicesParser.parse(xml);
   }
 
   void dispose() {

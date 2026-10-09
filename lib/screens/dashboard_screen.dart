@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+
+import 'dart:async';
 
 import '../router/router_utils/router_formatters.dart';
 import '../services/router_service.dart';
+import 'connected_devices_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -16,42 +20,70 @@ class _DashboardScreenState extends State<DashboardScreen> {
   RouterDashboardData? _data;
   String? _error;
   bool _loading = true;
+  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _routerService = RouterService();
     _refresh();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted && !_loading) {
+        _refresh(silent: true);
+      }
+    });
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({bool silent = false}) async {
     if (_loading && _data != null) return;
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
-      final result = await _routerService.refresh();
+      final data = await _routerService.refresh();
 
       if (!mounted) return;
 
       setState(() {
-        _data = result;
+        _data = data;
+        _error = null;
         _loading = false;
       });
     } catch (error) {
       if (!mounted) return;
 
       setState(() {
-        _error = _friendlyError(error);
+        if (!silent || _data == null) {
+          _error = _friendlyError(error);
+        }
+
         _loading = false;
       });
     }
   }
 
   String _friendlyError(Object error) {
+    if (error is DioException) {
+      switch (error.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+          return 'The router took too long to respond. Try again.';
+
+        case DioExceptionType.connectionError:
+          return 'Could not reach the router. Connect to its Wi-Fi '
+              'and check that 192.168.1.1 is reachable.';
+
+        default:
+          break;
+      }
+    }
+
     final message = error.toString();
 
     if (message.contains('ROUTER_PASSWORD')) {
@@ -78,6 +110,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _routerService.dispose();
     super.dispose();
   }
@@ -98,6 +131,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Connected devices',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      ConnectedDevicesScreen(service: _routerService),
+                ),
+              );
+            },
+            icon: const Icon(Icons.devices_rounded),
+          ),
           IconButton(
             tooltip: 'Refresh router data',
             onPressed: _loading ? null : _refresh,
