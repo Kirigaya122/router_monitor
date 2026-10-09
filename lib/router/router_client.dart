@@ -92,6 +92,27 @@ class RouterClient {
         'qop=$qop, nc=$nc, cnonce="$cnonce"';
   }
 
+  Future<void> logout() async {
+    try {
+      await _dio.get<String>(
+        '/xml_action.cgi',
+        queryParameters: {'Action': 'logout'},
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+        ),
+      );
+    } finally {
+      // Clear local authentication state even if the router
+      // does not respond to the logout request.
+      _username = null;
+      _password = null;
+      _nonce = null;
+      _nonceCount = 1;
+      _cookieJar.deleteAll();
+    }
+  }
+
   Future<bool> login({
     required String username,
     required String password,

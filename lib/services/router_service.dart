@@ -154,6 +154,17 @@ class RouterService {
     return RouterClientDevicesParser.parse(xml);
   }
 
+  Future<void> logout() async {
+    if (_disposed) return;
+
+    try {
+      await _client.logout();
+    } finally {
+      _loggedIn = false;
+      dispose();
+    }
+  }
+
   void dispose() {
     if (_disposed) return;
 

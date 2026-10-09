@@ -6,6 +6,7 @@ import 'dart:async';
 import '../router/router_utils/router_formatters.dart';
 import '../services/router_service.dart';
 import 'connected_devices_screen.dart';
+import 'router_login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final RouterService service;
@@ -66,6 +67,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text(
+          'This will end your router session in the app '
+          'and return you to the login screen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // Stop background polling before logging out.
+    _pollingTimer?.cancel();
+
+    try {
+      await _routerService.logout();
+    } catch (_) {
+      // Return to login even if the router is unreachable.
+    }
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const RouterLoginScreen()),
+      (route) => false,
+    );
   }
 
   String _friendlyError(Object error) {
@@ -150,6 +192,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.refresh_rounded),
           ),
           const SizedBox(width: 8),
+
+          PopupMenuButton<String>(
+            tooltip: 'More options',
+            onSelected: (value) {
+              if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_rounded),
+                    SizedBox(width: 12),
+                    Text('Log out'),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: SafeArea(
@@ -444,7 +507,7 @@ class _TrafficCard extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
-          _ClientRow(label: 'Downloaded', count: 0),
+
           Row(
             children: [
               const Expanded(child: Text('Received')),
