@@ -12,6 +12,8 @@ class RouterClient {
   static const String realm = 'Highwmg';
   static const String qop = 'auth';
   static const String digestUri = '/cgi/xml_action.cgi';
+
+  // Hardcoded token from the R023 firmware's PostXml() function.
   static const String csrfToken = 'hfiehifejfklihefiuehflejhfueihfeuihfeui';
 
   late final Dio _dio;
@@ -92,27 +94,6 @@ class RouterClient {
         'qop=$qop, nc=$nc, cnonce="$cnonce"';
   }
 
-  Future<void> logout() async {
-    try {
-      await _dio.get<String>(
-        '/xml_action.cgi',
-        queryParameters: {'Action': 'logout'},
-        options: Options(
-          responseType: ResponseType.plain,
-          headers: {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
-        ),
-      );
-    } finally {
-      // Clear local authentication state even if the router
-      // does not respond to the logout request.
-      _username = null;
-      _password = null;
-      _nonce = null;
-      _nonceCount = 1;
-      _cookieJar.deleteAll();
-    }
-  }
-
   Future<bool> login({
     required String username,
     required String password,
@@ -121,7 +102,6 @@ class RouterClient {
     _password = password;
     _nonceCount = 1;
 
-    // 1. Obtain the router's Digest challenge.
     final challengeResponse = await _dio.get<String>(
       '/login.cgi',
       options: Options(responseType: ResponseType.plain),
@@ -151,7 +131,6 @@ class RouterClient {
 
     _nonce = nonceMatch.group(1);
 
-    // 2. Construct the router-specific login URL response.
     final nonce = _nonce!;
     final cnonce = _nextCnonce();
     final nc = _nextNonceCount();
@@ -179,7 +158,6 @@ class RouterClient {
       },
     );
 
-    // 3. Send the login request with the additional Digest header.
     final response = await _dio.get<String>(
       loginUri.toString(),
       options: Options(
@@ -198,7 +176,6 @@ class RouterClient {
         .map((value) => value.trim())
         .firstWhere((value) => value.contains('status='), orElse: () => '');
 
-    // This router reports login status in a response header.
     if (loginStatus.contains('status=0') == true) {
       return true;
     }
@@ -213,10 +190,11 @@ class RouterClient {
     String objPath,
     String objMethod, {
     Map<String, String>? params,
+    bool retried = false,
   }) async {
     final xml = RouterXml.buildRequest(objPath, objMethod, params: params);
 
-    return _dio.post<String>(
+    final response = await _dio.post<String>(
       '/xml_action.cgi?method=set',
       data: xml,
       options: Options(
@@ -227,6 +205,46 @@ class RouterClient {
         },
       ),
     );
+
+    if (!retried && _needsReauth(response)) {
+      final username = _username;
+      final password = _password;
+
+      if (username != null && password != null) {
+        // The router session expired. Re-authenticate silently and
+        // retry the request once so the user never notices.
+        await login(username: username, password: password);
+        return postXml(objPath, objMethod, params: params, retried: true);
+      }
+    }
+
+    return response;
+  }
+
+  bool _needsReauth(Response<String> response) {
+    if (response.statusCode == 401) return true;
+
+    final body = response.data ?? '';
+
+    // The R023 firmware uses error_cause=5 to signal "no authority".
+    // Its own JavaScript handles this by clearing the auth header and
+    // forcing a fresh login on the next request.
+    return RegExp(r'<error_cause>\s*5\s*</error_cause>').hasMatch(body);
+  }
+
+  Future<void> logout() async {
+    try {
+      await _dio.get<String>('/xml_action.cgi?Action=logout');
+    } catch (_) {
+      // Return gracefully even if the router is unreachable.
+    }
+
+    _username = null;
+    _password = null;
+    _nonce = null;
+    _nonceCount = 1;
+
+    await _cookieJar.deleteAll();
   }
 
   void close() {

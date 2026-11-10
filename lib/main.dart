@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/router_login_screen.dart';
+import 'screens/startup_screen.dart';
 
 void main() {
   runApp(const RouterMonitorApp());
@@ -47,7 +47,7 @@ class RouterMonitorApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const RouterLoginScreen(),
+      home: const StartupScreen(),
     );
   }
 }

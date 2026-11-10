@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../router/router_client.dart';
 import '../router/router_models.dart';
 import '../router/router_link_context.dart';
@@ -7,6 +9,7 @@ import '../router/parsers/router_clients_parser.dart';
 import '../router/parsers/router_link_context_parser.dart';
 import '../router/parsers/router_clients_devices_parser.dart';
 import '../router/router_utils/router_speed_calculator.dart';
+import 'credential_store.dart';
 
 class RouterDashboardData {
   final RouterStatistics statistics;
@@ -29,12 +32,12 @@ class RouterDashboardData {
 class RouterService {
   final RouterClient _client = RouterClient();
   final RouterSpeedCalculator _speedCalculator = RouterSpeedCalculator();
+  final CredentialStore _credentialStore = CredentialStore();
 
   bool _loggedIn = false;
   bool _disposed = false;
-  Future<void>? _connectionAttempt;
+  Future<void>? _loginFuture;
 
-  /// Authenticate using credentials entered at runtime.
   Future<void> connect({
     required String username,
     required String password,
@@ -45,27 +48,24 @@ class RouterService {
 
     if (_loggedIn) return;
 
-    // Avoid simultaneous login attempts using the same client.
-    final existingAttempt = _connectionAttempt;
-    if (existingAttempt != null) {
-      await existingAttempt;
+    // Prevent concurrent login attempts from racing each other.
+    final existing = _loginFuture;
+    if (existing != null) {
+      await existing;
       return;
     }
 
-    final attempt = _performLogin(username: username, password: password);
-
-    _connectionAttempt = attempt;
+    final future = _doLogin(username: username, password: password);
+    _loginFuture = future;
 
     try {
-      await attempt;
+      await future;
     } finally {
-      if (identical(_connectionAttempt, attempt)) {
-        _connectionAttempt = null;
-      }
+      _loginFuture = null;
     }
   }
 
-  Future<void> _performLogin({
+  Future<void> _doLogin({
     required String username,
     required String password,
   }) async {
@@ -76,15 +76,49 @@ class RouterService {
     }
 
     _loggedIn = true;
+
+    // Best-effort persistence. If saving fails (e.g. keychain
+    // unavailable), the app still works; the user just won't get
+    // auto-login on the next launch.
+    try {
+      await _credentialStore.save(username: username, password: password);
+    } catch (_) {}
   }
 
-  Future<void> _ensureLoggedIn() async {
-    if (_disposed) {
-      throw StateError('Router service has been disposed.');
+  /// Attempts to log in using saved credentials.
+  ///
+  /// Returns true if login succeeded. If credentials are missing or
+  /// invalid, they are cleared. If the router is simply unreachable,
+  /// the credentials are kept so auto-login can be retried next launch.
+  Future<bool> tryAutoLogin() async {
+    ({String username, String password})? saved;
+
+    try {
+      saved = await _credentialStore.read();
+    } catch (_) {
+      return false;
     }
 
-    if (!_loggedIn) {
-      throw StateError('Not connected to the router. Please log in first.');
+    if (saved == null) return false;
+
+    try {
+      await connect(username: saved.username, password: saved.password);
+      return true;
+    } on DioException catch (e) {
+      final isNetworkError =
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout;
+
+      if (!isNetworkError) {
+        await _credentialStore.clear();
+      }
+
+      return false;
+    } catch (_) {
+      await _credentialStore.clear();
+      return false;
     }
   }
 
@@ -100,7 +134,6 @@ class RouterService {
     }
 
     final body = response.data;
-
     if (body == null || body.trim().isEmpty) {
       throw const FormatException('The router returned an empty response.');
     }
@@ -109,31 +142,26 @@ class RouterService {
   }
 
   Future<RouterDashboardData> refresh() async {
+    if (_disposed) {
+      throw StateError('Router service has been disposed.');
+    }
+
     await _ensureLoggedIn();
 
-    // Keep these sequential: this order works with your router.
     final statisticsXml = await _request('statistics', 'stat_get_common_data');
-
     final batteryXml = await _request('aoc', 'get_chg_info');
-
     final clientsXml = await _request('statistics', 'get_active_clients_num');
-
     final linkContextXml = await _request('cm', 'get_link_context');
 
     final statistics = RouterStatisticsParser.parse(statisticsXml);
-
     final battery = RouterBatteryParser.parse(batteryXml);
-
     final clients = RouterClients.fromXml(clientsXml);
-
     final linkContext = RouterLinkContextParser.parse(linkContextXml);
-
-    final now = DateTime.now();
 
     final speeds = _speedCalculator.update(
       totalRxBytes: statistics.totalRxBytes,
       totalTxBytes: statistics.totalTxBytes,
-      timestamp: now,
+      timestamp: DateTime.now(),
     );
 
     return RouterDashboardData(
@@ -142,32 +170,41 @@ class RouterService {
       clients: clients,
       linkContext: linkContext,
       speeds: speeds,
-      updatedAt: now,
+      updatedAt: DateTime.now(),
     );
   }
 
   Future<List<RouterClientDevice>> fetchConnectedDevices() async {
+    if (_disposed) {
+      throw StateError('Router service has been disposed.');
+    }
+
     await _ensureLoggedIn();
 
     final xml = await _request('statistics', 'get_conn_clients_info');
-
     return RouterClientDevicesParser.parse(xml);
   }
 
-  Future<void> logout() async {
-    if (_disposed) return;
+  Future<void> _ensureLoggedIn() async {
+    if (_loggedIn) return;
+    throw StateError(
+      'Router service is not connected. Call connect() or tryAutoLogin() first.',
+    );
+  }
 
+  Future<void> logout() async {
     try {
       await _client.logout();
-    } finally {
-      _loggedIn = false;
-      dispose();
-    }
+    } catch (_) {}
+
+    await _credentialStore.clear();
+
+    _loggedIn = false;
+    dispose();
   }
 
   void dispose() {
     if (_disposed) return;
-
     _disposed = true;
     _client.close();
   }

@@ -129,11 +129,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final message = error.toString();
 
-    if (message.contains('ROUTER_PASSWORD')) {
-      return 'Router password configuration is missing. Start the app '
-          'with ROUTER_PASSWORD configured.';
-    }
-
     if (message.contains('SocketException') ||
         message.contains('Connection refused') ||
         message.contains('Failed host lookup') ||
